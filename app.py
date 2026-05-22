@@ -8,6 +8,7 @@ from lib.bq import (
     load_monthly_shipments,
     load_monthly_subscriptions,
     load_op_receive_rate,
+    recent_month_labels,
 )
 
 st.set_page_config(
@@ -31,15 +32,20 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
+labels = recent_month_labels()
+M_THIS = labels["this"]     # e.g. "5月"
+M_PREV = labels["prev"]     # e.g. "4月"
+M_PREV2 = labels["prev2"]   # e.g. "3月"
+
 op_df = load_op_receive_rate()
 
 agg = {
-    "当月_成約数": int(op_df["当月_成約数"].fillna(0).sum()),
-    "当月_初回受取数": int(op_df["当月_初回受取数"].fillna(0).sum()),
-    "前月_成約数": int(op_df["前月_成約数"].fillna(0).sum()),
-    "前月_初回受取数": int(op_df["前月_初回受取数"].fillna(0).sum()),
-    "前々月_成約数": int(op_df["前々月_成約数"].fillna(0).sum()),
-    "前々月_初回受取数": int(op_df["前々月_初回受取数"].fillna(0).sum()),
+    f"{M_THIS}_成約数": int(op_df[f"{M_THIS}_成約数"].fillna(0).sum()),
+    f"{M_THIS}_初回受取数": int(op_df[f"{M_THIS}_初回受取数"].fillna(0).sum()),
+    f"{M_PREV}_成約数": int(op_df[f"{M_PREV}_成約数"].fillna(0).sum()),
+    f"{M_PREV}_初回受取数": int(op_df[f"{M_PREV}_初回受取数"].fillna(0).sum()),
+    f"{M_PREV2}_成約数": int(op_df[f"{M_PREV2}_成約数"].fillna(0).sum()),
+    f"{M_PREV2}_初回受取数": int(op_df[f"{M_PREV2}_初回受取数"].fillna(0).sum()),
 }
 
 
@@ -47,9 +53,9 @@ def safe_rate(num: int, den: int) -> float | None:
     return num / den if den else None
 
 
-cur_rate = safe_rate(agg["当月_初回受取数"], agg["当月_成約数"])
-prev_rate = safe_rate(agg["前月_初回受取数"], agg["前月_成約数"])
-prev2_rate = safe_rate(agg["前々月_初回受取数"], agg["前々月_成約数"])
+cur_rate = safe_rate(agg[f"{M_THIS}_初回受取数"], agg[f"{M_THIS}_成約数"])
+prev_rate = safe_rate(agg[f"{M_PREV}_初回受取数"], agg[f"{M_PREV}_成約数"])
+prev2_rate = safe_rate(agg[f"{M_PREV2}_初回受取数"], agg[f"{M_PREV2}_成約数"])
 
 
 def fmt_pct(v: float | None) -> str:
@@ -64,33 +70,45 @@ def delta_pct(cur: float | None, prev: float | None) -> str | None:
 
 st.subheader("初回受取率（主要KPI）")
 st.caption("成約のうち、発送（対応状況=5）が21日以上前に1件以上ある割合。"
-           "**前月以前が評価可能**な数値です。")
+           f"**{M_PREV} 以前が評価可能**な数値です。")
 c1, c2, c3 = st.columns(3)
 c1.metric(
-    "前月 初回受取率（評価可）",
+    f"{M_PREV} 初回受取率（評価可）",
     fmt_pct(prev_rate),
     delta_pct(prev_rate, prev2_rate),
-    help=f"{agg['前月_初回受取数']:,} / {agg['前月_成約数']:,} 件",
+    help=f"{agg[f'{M_PREV}_初回受取数']:,} / {agg[f'{M_PREV}_成約数']:,} 件",
 )
 c2.metric(
-    "前々月 初回受取率",
+    f"{M_PREV2} 初回受取率",
     fmt_pct(prev2_rate),
-    help=f"{agg['前々月_初回受取数']:,} / {agg['前々月_成約数']:,} 件",
+    help=f"{agg[f'{M_PREV2}_初回受取数']:,} / {agg[f'{M_PREV2}_成約数']:,} 件",
 )
 c3.metric(
-    "当月 初回受取率（21日未経過のため低めに出ます）",
+    f"{M_THIS} 初回受取率（21日未経過のため低めに出ます）",
     fmt_pct(cur_rate),
-    help=f"{agg['当月_初回受取数']:,} / {agg['当月_成約数']:,} 件",
+    help=f"{agg[f'{M_THIS}_初回受取数']:,} / {agg[f'{M_THIS}_成約数']:,} 件",
 )
 
 st.divider()
 
 st.subheader("成約数・初回受取数（全体）")
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("当月 成約数", f"{agg['当月_成約数']:,}", f"{agg['当月_成約数'] - agg['前月_成約数']:+,} vs 前月")
-c2.metric("前月 成約数", f"{agg['前月_成約数']:,}", f"{agg['前月_成約数'] - agg['前々月_成約数']:+,} vs 前々月")
-c3.metric("前月 初回受取数", f"{agg['前月_初回受取数']:,}", f"{agg['前月_初回受取数'] - agg['前々月_初回受取数']:+,} vs 前々月")
-c4.metric("前々月 初回受取数", f"{agg['前々月_初回受取数']:,}")
+c1.metric(
+    f"{M_THIS} 成約数",
+    f"{agg[f'{M_THIS}_成約数']:,}",
+    f"{agg[f'{M_THIS}_成約数'] - agg[f'{M_PREV}_成約数']:+,} vs {M_PREV}",
+)
+c2.metric(
+    f"{M_PREV} 成約数",
+    f"{agg[f'{M_PREV}_成約数']:,}",
+    f"{agg[f'{M_PREV}_成約数'] - agg[f'{M_PREV2}_成約数']:+,} vs {M_PREV2}",
+)
+c3.metric(
+    f"{M_PREV} 初回受取数",
+    f"{agg[f'{M_PREV}_初回受取数']:,}",
+    f"{agg[f'{M_PREV}_初回受取数'] - agg[f'{M_PREV2}_初回受取数']:+,} vs {M_PREV2}",
+)
+c4.metric(f"{M_PREV2} 初回受取数", f"{agg[f'{M_PREV2}_初回受取数']:,}")
 
 st.divider()
 
@@ -118,9 +136,9 @@ st.divider()
 st.subheader("3ヶ月比較（全OP合計）")
 cmp_df = pd.DataFrame(
     {
-        "月": ["前々月", "前月", "当月"],
-        "成約数": [agg["前々月_成約数"], agg["前月_成約数"], agg["当月_成約数"]],
-        "初回受取数": [agg["前々月_初回受取数"], agg["前月_初回受取数"], agg["当月_初回受取数"]],
+        "月": [M_PREV2, M_PREV, M_THIS],
+        "成約数": [agg[f"{M_PREV2}_成約数"], agg[f"{M_PREV}_成約数"], agg[f"{M_THIS}_成約数"]],
+        "初回受取数": [agg[f"{M_PREV2}_初回受取数"], agg[f"{M_PREV}_初回受取数"], agg[f"{M_THIS}_初回受取数"]],
         "初回受取率": [prev2_rate or 0, prev_rate or 0, cur_rate or 0],
     }
 )

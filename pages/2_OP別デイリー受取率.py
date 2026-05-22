@@ -124,10 +124,40 @@ st.caption("空白セル＝その日その人に成約なし。受取率は成�
 pivot_src = view.copy()
 pivot_src["成約日"] = pd.to_datetime(pivot_src["成約日"]).dt.date
 
+# 企業合計（各企業×成約日で集約）
+company_totals = (
+    pivot_src.groupby(["企業名", "成約日"], as_index=False)
+    .agg(成約数=("成約数", "sum"), 初回受取数=("初回受取数", "sum"))
+)
+company_totals["OP名"] = "(企業合計)"
+company_totals["初回受取率"] = company_totals.apply(
+    lambda r: (r["初回受取数"] / r["成約数"]) if r["成約数"] else None, axis=1
+)
+
+# 全合計（成約日のみで集約）
+grand_totals = (
+    pivot_src.groupby(["成約日"], as_index=False)
+    .agg(成約数=("成約数", "sum"), 初回受取数=("初回受取数", "sum"))
+)
+grand_totals["企業名"] = "(全合計)"
+grand_totals["OP名"] = "(全合計)"
+grand_totals["初回受取率"] = grand_totals.apply(
+    lambda r: (r["初回受取数"] / r["成約数"]) if r["成約数"] else None, axis=1
+)
+
+pivot_full = pd.concat(
+    [
+        pivot_src[["企業名", "OP名", "成約日", "成約数", "初回受取数", "初回受取率"]],
+        company_totals[["企業名", "OP名", "成約日", "成約数", "初回受取数", "初回受取率"]],
+        grand_totals[["企業名", "OP名", "成約日", "成約数", "初回受取数", "初回受取率"]],
+    ],
+    ignore_index=True,
+)
+
 # Build wide table with 3-level columns
 parts: list[pd.DataFrame] = []
 for metric in ["成約数", "初回受取率"]:
-    p = pivot_src.pivot_table(
+    p = pivot_full.pivot_table(
         index="成約日",
         columns=["企業名", "OP名"],
         values=metric,
@@ -141,14 +171,26 @@ for metric in ["成約数", "初回受取率"]:
 
 if parts:
     pivot = pd.concat(parts, axis=1).sort_index(axis=0)
-    # Order: 企業名→OP名→指標 (成約数 → 受取率)
+    # Order:
+    #   企業1のOP A → B → ... → (企業合計)
+    #   企業2のOP ...
+    #   ...
+    #   (全合計)
     metric_order = {"成約数": 0, "初回受取率": 1}
-    pivot = pivot[
-        sorted(
-            pivot.columns,
-            key=lambda c: (str(c[0]), str(c[1]), metric_order.get(c[2], 99)),
-        )
-    ]
+
+    def col_key(c: tuple) -> tuple:
+        company, op, metric = c
+        if company == "(全合計)":
+            company_rank = (1, "")  # 全合計を最後尾
+        else:
+            company_rank = (0, company)
+        if op == "(企業合計)" or op == "(全合計)":
+            op_rank = (1, "")  # 各企業のOPの後に合計
+        else:
+            op_rank = (0, op)
+        return (company_rank, op_rank, metric_order.get(metric, 99))
+
+    pivot = pivot[sorted(pivot.columns, key=col_key)]
 
     fmt_map: dict = {}
     for col in pivot.columns:
@@ -158,9 +200,18 @@ if parts:
             fmt_map[col] = "{:.0f}"
 
     rate_cols = [c for c in pivot.columns if c[2] == "初回受取率"]
+
+    # 企業合計・全合計の列を太字＋区別色に
+    total_cols = [
+        c for c in pivot.columns
+        if c[1] == "(企業合計)" or c[0] == "(全合計)"
+    ]
+    grand_cols = [c for c in pivot.columns if c[0] == "(全合計)"]
+
     styled_pivot = (
         pivot.style.format(fmt_map, na_rep="")
         .map(_rate_bg, subset=rate_cols)
+        .set_properties(subset=total_cols, **{"font-weight": "700"})
         .set_table_styles(
             [
                 {"selector": "table", "props": "border-collapse: separate; border-spacing: 0; font-size: 13px;"},

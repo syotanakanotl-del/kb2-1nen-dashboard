@@ -206,6 +206,23 @@ def _shipped_count_per_master() -> pd.DataFrame:
     return grouped
 
 
+def recent_month_labels() -> dict:
+    """直近3ヶ月の表示用ラベル: {"this": "5月", "prev": "4月", "prev2": "3月"}."""
+    today = pd.Timestamp.now(tz="Asia/Tokyo").normalize().tz_localize(None)
+    this_m = pd.Timestamp(today.year, today.month, 1)
+    prev_m = this_m - pd.offsets.MonthBegin(1)
+    prev2_m = this_m - pd.offsets.MonthBegin(2)
+    return {
+        "this": f"{this_m.month}月",
+        "prev": f"{prev_m.month}月",
+        "prev2": f"{prev2_m.month}月",
+        # raw timestamps too
+        "_this_ts": this_m,
+        "_prev_ts": prev_m,
+        "_prev2_ts": prev2_m,
+    }
+
+
 def load_op_receive_rate() -> pd.DataFrame:
     master = load_subscription_master().copy()
     master["成約日"] = pd.to_datetime(master["成約日"])
@@ -215,10 +232,8 @@ def load_op_receive_rate() -> pd.DataFrame:
     df["has_received"] = (df["shipped_count"] >= 1).astype(int)
     df["month"] = df["成約日"].dt.to_period("M").dt.to_timestamp()
 
-    today = pd.Timestamp.now(tz="Asia/Tokyo").normalize().tz_localize(None)
-    this_m = pd.Timestamp(today.year, today.month, 1)
-    prev_m = (this_m - pd.offsets.MonthBegin(1))
-    prev2_m = (this_m - pd.offsets.MonthBegin(2))
+    labels = recent_month_labels()
+    this_m, prev_m, prev2_m = labels["_this_ts"], labels["_prev_ts"], labels["_prev2_ts"]
 
     in_window = df[df["month"].isin([this_m, prev_m, prev2_m])].copy()
 
@@ -228,7 +243,7 @@ def load_op_receive_rate() -> pd.DataFrame:
         .reset_index()
     )
 
-    months_map = {prev2_m: "前々月", prev_m: "前月", this_m: "当月"}
+    months_map = {prev2_m: labels["prev2"], prev_m: labels["prev"], this_m: labels["this"]}
     rows: list[dict] = []
     for op, g in agg.groupby("担当者名"):
         row: dict = {"OP名": op}
@@ -247,7 +262,9 @@ def load_op_receive_rate() -> pd.DataFrame:
         rows.append(row)
     out = pd.DataFrame(rows)
     cols = ["OP名"]
-    for label in ["当月", "前月", "前々月"]:
+    # 表示順: 当月→前月→前々月（直近を左に）
+    for key in ["this", "prev", "prev2"]:
+        label = labels[key]
         cols += [f"{label}_成約数", f"{label}_初回受取数", f"{label}_初回受取率"]
     return out[cols].sort_values("OP名").reset_index(drop=True)
 
