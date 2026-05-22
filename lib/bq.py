@@ -240,7 +240,6 @@ def recent_month_labels() -> dict:
     }
 
 
-@st.cache_data(ttl=60 * 30, show_spinner="OP別受取率を集計中…")
 def load_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     master = load_subscription_master().copy()
     master = _apply_coupon_filter(master, coupon)
@@ -288,7 +287,6 @@ def load_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     return out[cols].sort_values("OP名").reset_index(drop=True)
 
 
-@st.cache_data(ttl=60 * 30, show_spinner="OP別デイリーを集計中…")
 def load_daily_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     """成約日 × OP の 成約数 / 初回受取数 / 初回受取率。
 
@@ -322,7 +320,6 @@ def load_daily_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     return agg.rename(columns={"担当者名": "OP名"})
 
 
-@st.cache_data(ttl=60 * 30, show_spinner="OP別月間を集計中…")
 def load_monthly_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     """月 × OP の 成約数 / 初回受取数 / 初回受取率。
 
