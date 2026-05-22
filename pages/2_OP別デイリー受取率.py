@@ -180,9 +180,8 @@ if parts:
         .set_properties(**{"min-width": "70px"})
     )
     html = styled_pivot.to_html()
-    st.markdown(
-        f'<div style="overflow:auto; max-height:650px; border:1px solid #ccc;">{html}</div>',
-        unsafe_allow_html=True,
+    st.html(
+        f'<div style="overflow:auto; max-height:650px; border:1px solid #ccc;">{html}</div>'
     )
 
     st.download_button(
