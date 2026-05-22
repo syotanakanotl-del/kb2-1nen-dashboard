@@ -301,6 +301,37 @@ def load_daily_op_receive_rate() -> pd.DataFrame:
     return agg.rename(columns={"担当者名": "OP名"})
 
 
+def load_monthly_op_receive_rate() -> pd.DataFrame:
+    """月 × OP の 成約数 / 初回受取数 / 初回受取率。
+
+    OP別デイリー受取率の月集計版。全期間の月別履歴を返す。
+    """
+    master = load_subscription_master().copy()
+    master["成約日"] = pd.to_datetime(master["成約日"])
+    ship = _shipped_count_per_master()
+    df = master.merge(ship, on="マスタID", how="left")
+    df["shipped_count"] = df["shipped_count"].fillna(0).astype(int)
+    df["has_received"] = (df["shipped_count"] >= 1).astype(int)
+    df["月"] = df["成約日"].dt.to_period("M").dt.to_timestamp()
+    df = df.dropna(subset=["月", "担当者名", "企業名"])
+
+    agg = (
+        df.groupby(["企業名", "担当者名", "月"])
+        .agg(成約数=("マスタID", "nunique"), 初回受取数=("has_received", "sum"))
+        .reset_index()
+    )
+    agg["初回受取率"] = agg.apply(
+        lambda r: (r["初回受取数"] / r["成約数"]) if r["成約数"] else None, axis=1
+    )
+
+    today = pd.Timestamp.now(tz="Asia/Tokyo").normalize().tz_localize(None)
+    # 月単位の成熟: 当月は21日経過してない可能性が高いので未成熟扱い
+    this_month_start = pd.Timestamp(today.year, today.month, 1)
+    agg["成熟"] = agg["月"] < this_month_start
+
+    return agg.rename(columns={"担当者名": "OP名"})
+
+
 def load_retention() -> pd.DataFrame:
     master = load_subscription_master().copy()
     master["成約日"] = pd.to_datetime(master["成約日"])

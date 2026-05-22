@@ -24,6 +24,7 @@ with st.sidebar:
     st.header("メニュー")
     st.write("- **サマリー** (このページ)")
     st.write("- **OP別パフォーマンス**")
+    st.write("- **OP別月間受取率**")
     st.write("- **OP別デイリー受取率**")
     st.write("- **継続率**")
     st.write("- **詳細データ**")
