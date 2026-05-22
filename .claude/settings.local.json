@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bq version *)",
+      "Bash(gcloud config *)",
+      "PowerShell(Get-Command bq, gcloud, python -ErrorAction SilentlyContinue)",
+      "PowerShell($paths = @\\(\"$env:LOCALAPPDATA\\\\Google\\\\Cloud SDK\", \"$env:ProgramFiles\\\\Google\\\\Cloud SDK\", \"${env:ProgramFiles\\(x86\\)}\\\\Google\\\\Cloud SDK\", \"$env:APPDATA\\\\gcloud\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { Write-Output \"FOUND: $p\" } })",
+      "PowerShell($env:Path = \"$env:LOCALAPPDATA\\\\Google\\\\Cloud SDK\\\\google-cloud-sdk\\\\bin;$env:Path\"; gcloud auth application-default login --no-launch-browser=false 2>&1)",
+      "PowerShell($gcloudCmd = \"$env:LOCALAPPDATA\\\\Google\\\\Cloud SDK\\\\google-cloud-sdk\\\\bin\\\\gcloud.cmd\"; Start-Process -FilePath \"powershell.exe\" -ArgumentList \"-NoExit\",\"-Command\",\"& '$gcloudCmd' auth application-default login\")",
+      "Bash(mkdir -p \"/c/Users/syota/.claude/projects/C--Users-syota-OneDrive-dashboard/memory\" 2>&1; echo OK)",
+      "PowerShell(cd \"C:\\\\Users\\\\syota\\\\OneDrive\\\\dashboard\"; $env:PYTHONIOENCODING=\"utf-8\"; .\\\\.venv\\\\Scripts\\\\streamlit.exe run app.py --server.headless=true --server.port=8501)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8501/)",
+      "mcp__Claude_Preview__preview_start",
+      "PowerShell($env:Path = \"$env:LOCALAPPDATA\\\\Google\\\\Cloud SDK\\\\google-cloud-sdk\\\\bin;$env:Path\"; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; 1..11 | ForEach-Object { $v = \"_subscription_master_p$_\"; $out = bq show --format=prettyjson \"trustline-project:KB2_1nen.$v\" 2>&1 | Out-String; if \\($out -match 'spreadsheets/d/\\([^/]+\\)'\\) { Write-Host \"$v -> $\\($matches[1]\\)\" } else { Write-Host \"$v -> NOT FOUND\" } })",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:8501/)",
+      "Read(//c/c/Users/syota/OneDrive/dashboard/**)",
+      "Bash(mv \"2_継続率.py\" \"3_継続率.py\")",
+      "Bash(mv \"3_詳細データ.py\" \"4_詳細データ.py\")"
+    ]
+  }
+}
