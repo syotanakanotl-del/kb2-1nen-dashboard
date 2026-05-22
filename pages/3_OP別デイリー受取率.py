@@ -172,22 +172,22 @@ for metric in ["成約数", "初回受取率"]:
 if parts:
     pivot = pd.concat(parts, axis=1).sort_index(axis=0)
     # Order:
-    #   企業1のOP A → B → ... → (企業合計)
-    #   企業2のOP ...
-    #   ...
     #   (全合計)
+    #   企業1 (企業合計) → OP A → B → ...
+    #   企業2 (企業合計) → OP ...
+    #   ...
     metric_order = {"成約数": 0, "初回受取率": 1}
 
     def col_key(c: tuple) -> tuple:
         company, op, metric = c
         if company == "(全合計)":
-            company_rank = (1, "")  # 全合計を最後尾
+            company_rank = (0, "")  # 全合計を先頭
         else:
-            company_rank = (0, company)
+            company_rank = (1, company)
         if op == "(企業合計)" or op == "(全合計)":
-            op_rank = (1, "")  # 各企業のOPの後に合計
+            op_rank = (0, "")  # 各企業の合計を先頭
         else:
-            op_rank = (0, op)
+            op_rank = (1, op)
         return (company_rank, op_rank, metric_order.get(metric, 99))
 
     pivot = pivot[sorted(pivot.columns, key=col_key)]
