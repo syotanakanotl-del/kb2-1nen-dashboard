@@ -21,14 +21,21 @@ st.caption(
     f"**{M_PREV}以前の数値を主な評価指標として** ご覧ください。"
 )
 
-df = load_op_receive_rate()
+with st.sidebar:
+    st.header("フィルタ")
+    coupon_choice = st.radio("クーポン", ["両方", "有", "無"], horizontal=True, key="coupon_perf")
+
+coupon_arg = coupon_choice if coupon_choice in ("有", "無") else None
+df = load_op_receive_rate(coupon=coupon_arg)
+
+if coupon_arg:
+    st.info(f"🎫 クーポン **{coupon_arg}** のみで集計")
 
 if df.empty:
     st.info("データがありません。")
     st.stop()
 
 with st.sidebar:
-    st.header("フィルタ")
     op_names = sorted(df["OP名"].dropna().unique().tolist())
     selected = st.multiselect("OP名", op_names, default=op_names)
     sort_target = st.selectbox(

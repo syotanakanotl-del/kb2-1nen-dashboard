@@ -29,16 +29,23 @@ with st.sidebar:
     st.write("- **継続率**")
     st.write("- **詳細データ**")
     st.divider()
+    st.header("フィルタ")
+    coupon_choice = st.radio("クーポン", ["両方", "有", "無"], horizontal=True, key="coupon_filter")
+    st.divider()
     if st.button("キャッシュをクリア", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+
+coupon_arg = coupon_choice if coupon_choice in ("有", "無") else None
 
 labels = recent_month_labels()
 M_THIS = labels["this"]     # e.g. "5月"
 M_PREV = labels["prev"]     # e.g. "4月"
 M_PREV2 = labels["prev2"]   # e.g. "3月"
 
-op_df = load_op_receive_rate()
+op_df = load_op_receive_rate(coupon=coupon_arg)
+if coupon_arg:
+    st.info(f"🎫 クーポン **{coupon_arg}** のみで集計")
 
 agg = {
     f"{M_THIS}_成約数": int(op_df[f"{M_THIS}_成約数"].fillna(0).sum()),

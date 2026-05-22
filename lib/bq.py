@@ -190,6 +190,23 @@ def load_monthly_shipments() -> pd.DataFrame:
     )
 
 
+def classify_coupon(value) -> str:
+    """クーポン値を「有」/「無」に分類."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "無"
+    v = str(value).strip()
+    if not v or v in {"クーポン無", "なし", "無", "なし(クーポンなし)"}:
+        return "無"
+    return "有"
+
+
+def _apply_coupon_filter(master: pd.DataFrame, coupon: str | None) -> pd.DataFrame:
+    """coupon = '有' | '無' | None でフィルタ。"""
+    if coupon not in ("有", "無"):
+        return master
+    return master[master["クーポン"].map(classify_coupon) == coupon].copy()
+
+
 def _shipped_count_per_master() -> pd.DataFrame:
     """マスタIDごとの「21日以上前・対応状況=5」発送件数 ＝ 受取済回数。"""
     today = pd.Timestamp.now(tz="Asia/Tokyo").normalize()
@@ -223,8 +240,10 @@ def recent_month_labels() -> dict:
     }
 
 
-def load_op_receive_rate() -> pd.DataFrame:
+@st.cache_data(ttl=60 * 30, show_spinner="OP別受取率を集計中…")
+def load_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     master = load_subscription_master().copy()
+    master = _apply_coupon_filter(master, coupon)
     master["成約日"] = pd.to_datetime(master["成約日"])
     ship = _shipped_count_per_master()
     df = master.merge(ship, on="マスタID", how="left")
@@ -269,7 +288,8 @@ def load_op_receive_rate() -> pd.DataFrame:
     return out[cols].sort_values("OP名").reset_index(drop=True)
 
 
-def load_daily_op_receive_rate() -> pd.DataFrame:
+@st.cache_data(ttl=60 * 30, show_spinner="OP別デイリーを集計中…")
+def load_daily_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     """成約日 × OP の 成約数 / 初回受取数 / 初回受取率。
 
     初回受取率 = 当該成約日の成約のうち、発送完了（対応状況=5）が
@@ -277,6 +297,7 @@ def load_daily_op_receive_rate() -> pd.DataFrame:
     出やすいので注意。
     """
     master = load_subscription_master().copy()
+    master = _apply_coupon_filter(master, coupon)
     master["成約日"] = pd.to_datetime(master["成約日"])
     ship = _shipped_count_per_master()
     df = master.merge(ship, on="マスタID", how="left")
@@ -301,12 +322,14 @@ def load_daily_op_receive_rate() -> pd.DataFrame:
     return agg.rename(columns={"担当者名": "OP名"})
 
 
-def load_monthly_op_receive_rate() -> pd.DataFrame:
+@st.cache_data(ttl=60 * 30, show_spinner="OP別月間を集計中…")
+def load_monthly_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     """月 × OP の 成約数 / 初回受取数 / 初回受取率。
 
     OP別デイリー受取率の月集計版。全期間の月別履歴を返す。
     """
     master = load_subscription_master().copy()
+    master = _apply_coupon_filter(master, coupon)
     master["成約日"] = pd.to_datetime(master["成約日"])
     ship = _shipped_count_per_master()
     df = master.merge(ship, on="マスタID", how="left")

@@ -29,7 +29,15 @@ st.caption(
     "21日未経過は0%付近に出ます。"
 )
 
-df = load_daily_op_receive_rate()
+with st.sidebar:
+    st.header("フィルタ")
+    coupon_choice = st.radio("クーポン", ["両方", "有", "無"], horizontal=True, key="coupon_daily")
+
+coupon_arg = coupon_choice if coupon_choice in ("有", "無") else None
+df = load_daily_op_receive_rate(coupon=coupon_arg)
+
+if coupon_arg:
+    st.info(f"🎫 クーポン **{coupon_arg}** のみで集計")
 
 if df.empty:
     st.info("データがありません。")
@@ -41,7 +49,6 @@ min_date = df["成約日"].min().date()
 max_date = df["成約日"].max().date()
 
 with st.sidebar:
-    st.header("フィルタ")
     default_from = max(min_date, (today - pd.Timedelta(days=90)).date())
     default_to = maturity_cutoff.date()
     date_range = st.date_input(

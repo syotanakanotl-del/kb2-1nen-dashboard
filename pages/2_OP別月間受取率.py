@@ -28,7 +28,15 @@ st.caption(
     "**前月以前を主な評価指標として** ご覧ください。"
 )
 
-df = load_monthly_op_receive_rate()
+with st.sidebar:
+    st.header("フィルタ")
+    coupon_choice = st.radio("クーポン", ["両方", "有", "無"], horizontal=True, key="coupon_monthly")
+
+coupon_arg = coupon_choice if coupon_choice in ("有", "無") else None
+df = load_monthly_op_receive_rate(coupon=coupon_arg)
+
+if coupon_arg:
+    st.info(f"🎫 クーポン **{coupon_arg}** のみで集計")
 
 if df.empty:
     st.info("データがありません。")
@@ -37,8 +45,6 @@ if df.empty:
 months_sorted = sorted(df["月"].dropna().unique())
 
 with st.sidebar:
-    st.header("フィルタ")
-
     only_mature = st.checkbox("成熟済み (前月以前) のみ", value=False)
 
     op_names = sorted(df["OP名"].dropna().unique().tolist())
