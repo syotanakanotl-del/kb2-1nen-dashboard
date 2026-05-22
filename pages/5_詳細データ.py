@@ -4,12 +4,23 @@ import pandas as pd
 import streamlit as st
 
 from lib.bq import load_subscription_master
+from lib.ui import dataset_selector, show_dataset_header
 
 st.set_page_config(page_title="詳細データ", page_icon="🔍", layout="wide")
 st.title("詳細データ")
-st.caption("subscription_master_KB2_1nen をフィルタ・検索")
+st.caption("選択したデータセットの subscription_master をフィルタ・検索")
 
-df = load_subscription_master()
+with st.sidebar:
+    st.header("フィルタ")
+dataset_id = dataset_selector(key="dataset_detail")
+
+show_dataset_header(dataset_id)
+
+try:
+    df = load_subscription_master(dataset_id)
+except RuntimeError as e:
+    st.error(str(e))
+    st.stop()
 
 if df.empty:
     st.info("データがありません。")
@@ -19,7 +30,6 @@ df = df.copy()
 df["成約日"] = pd.to_datetime(df["成約日"])
 
 with st.sidebar:
-    st.header("フィルタ")
 
     min_date = df["成約日"].min().date()
     max_date = df["成約日"].max().date()

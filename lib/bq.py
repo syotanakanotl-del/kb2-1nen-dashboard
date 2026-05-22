@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -12,18 +13,16 @@ from google.oauth2.credentials import Credentials as UserCredentials
 from googleapiclient.discovery import build
 
 PROJECT_ID = "trustline-project"
+DEFAULT_DATASET = "KB2_1nen"
 ROOT = Path(__file__).resolve().parent.parent
 SA_KEY_PATH = ROOT / "secrets" / "dashboard-bq-key.json"
 USER_ADC_PATH = Path(os.environ.get("APPDATA", "")) / "gcloud" / "application_default_credentials.json"
 
-SHEET_SUBSCRIPTION_MASTER_ID = "1bRbSn6I8sa0C75h5zA8nQBfG9Lo3e39n_7ZkiLz2Ubw"
+# item_master は project-wide
 SHEET_ITEM_MASTER_ID = "1lrBYe5MLzXRp2IfE05GpRrycCzZy9tFEyY0itCaTjF4"
-
-SUBSCRIPTION_TABS = [f"キラーバーナーⅡ{c}" for c in "①②③④⑤⑥⑦⑧⑨⑩⑪"]
-SUBSCRIPTION_RANGE_SUFFIX = "!A:E"
-SUBSCRIPTION_COLUMNS = ["seiyaku_date", "master_id", "coupon", "company", "person"]
-
 ITEM_MASTER_RANGE = "KB!A:P"
+
+DEFAULT_SUBSCRIPTION_COLUMNS = ["seiyaku_date", "master_id", "coupon", "company", "person"]
 
 
 def _sa_credentials():
@@ -77,28 +76,93 @@ def get_sheets_service():
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
 
+@st.cache_data(ttl=60 * 60, show_spinner="シート構造を取得中…")
+def get_subscription_sheet_info(dataset_id: str) -> dict:
+    """指定datasetの `_subscription_master_p*` 外部表から、
+    spreadsheet_id とタブごとの range を動的取得して返す。
+
+    Returns:
+        {"sheet_id": str, "ranges": list[str], "tabs": list[str]}
+    """
+    client = get_bq_client()
+    sheet_id: str | None = None
+    tab_ranges: list[tuple[int, str, str]] = []  # (partition_n, tab_name, range_str)
+
+    for table_item in client.list_tables(f"{PROJECT_ID}.{dataset_id}"):
+        if not table_item.table_id.startswith("_subscription_master_p"):
+            continue
+        try:
+            n = int(table_item.table_id.replace("_subscription_master_p", ""))
+        except ValueError:
+            continue
+        full = client.get_table(table_item.reference)
+        edc = getattr(full, "external_data_configuration", None)
+        if edc is None or not edc.source_uris:
+            continue
+        m = re.search(r"/spreadsheets/d/([^/]+)", edc.source_uris[0])
+        if not m:
+            continue
+        this_sheet_id = m.group(1)
+        if sheet_id is None:
+            sheet_id = this_sheet_id
+
+        gs_opts = getattr(edc, "google_sheets_options", None)
+        range_str = ""
+        if gs_opts is not None:
+            range_str = getattr(gs_opts, "range", "") or ""
+        if "!" in range_str:
+            tab = range_str.split("!")[0]
+        else:
+            tab = range_str
+        tab_ranges.append((n, tab, range_str))
+
+    tab_ranges.sort(key=lambda x: x[0])
+    return {
+        "sheet_id": sheet_id,
+        "tabs": [t for _, t, _ in tab_ranges],
+        "ranges": [r for _, _, r in tab_ranges],
+    }
+
+
 @st.cache_data(ttl=60 * 30, show_spinner="Sheets: subscription_master 読み込み中…")
-def load_subscription_master() -> pd.DataFrame:
+def load_subscription_master(dataset_id: str = DEFAULT_DATASET) -> pd.DataFrame:
+    info = get_subscription_sheet_info(dataset_id)
+    sheet_id = info["sheet_id"]
+    if not sheet_id or not info["ranges"]:
+        return pd.DataFrame(columns=DEFAULT_SUBSCRIPTION_COLUMNS + ["source_tab"])
+
     svc = get_sheets_service()
-    ranges = [f"{tab}{SUBSCRIPTION_RANGE_SUFFIX}" for tab in SUBSCRIPTION_TABS]
-    res = (
-        svc.spreadsheets()
-        .values()
-        .batchGet(spreadsheetId=SHEET_SUBSCRIPTION_MASTER_ID, ranges=ranges)
-        .execute()
-    )
+    try:
+        res = (
+            svc.spreadsheets()
+            .values()
+            .batchGet(spreadsheetId=sheet_id, ranges=info["ranges"])
+            .execute()
+        )
+    except Exception as e:
+        # アクセス権がない or タブ名が変わった等
+        raise RuntimeError(
+            f"Sheets `{sheet_id}` の読み込みに失敗しました。"
+            f"サービスアカウント dashboard-bq@trustline-project.iam.gserviceaccount.com "
+            f"がシートに閲覧者として共有されているか確認してください。\n"
+            f"詳細: {type(e).__name__}: {str(e)[:200]}"
+        ) from e
+
     frames: list[pd.DataFrame] = []
-    for tab, vr in zip(SUBSCRIPTION_TABS, res.get("valueRanges", [])):
+    for tab, vr in zip(info["tabs"], res.get("valueRanges", [])):
         values = vr.get("values", [])
         if len(values) < 2:
             continue
         rows = values[1:]
-        rows = [r + [None] * (len(SUBSCRIPTION_COLUMNS) - len(r)) for r in rows]
-        df = pd.DataFrame(rows, columns=SUBSCRIPTION_COLUMNS)
-        df["source_tab"] = f"KB2 1年OB {tab}"
+        ncols = len(DEFAULT_SUBSCRIPTION_COLUMNS)
+        rows = [r + [None] * (ncols - len(r)) for r in rows]
+        # 過剰な列数があれば切り詰め
+        rows = [r[:ncols] for r in rows]
+        df = pd.DataFrame(rows, columns=DEFAULT_SUBSCRIPTION_COLUMNS)
+        df["source_tab"] = tab
         frames.append(df)
     if not frames:
-        return pd.DataFrame(columns=SUBSCRIPTION_COLUMNS + ["source_tab"])
+        return pd.DataFrame(columns=DEFAULT_SUBSCRIPTION_COLUMNS + ["source_tab"])
     master = pd.concat(frames, ignore_index=True)
 
     master["成約日"] = pd.to_datetime(
@@ -148,13 +212,25 @@ def load_child_orders_raw() -> pd.DataFrame:
     return client.query(sql).to_dataframe()
 
 
-def load_child_orders_filtered() -> pd.DataFrame:
+def _retention_prefix_for(dataset_id: str) -> str | None:
+    """データセットIDから item_master.継続率抽出用 のフィルタプレフィックスを返す。"""
+    # local import to avoid circular import
+    from lib.datasets import PLAN_RETENTION_PREFIX, parse_dataset_id
+
+    _, plan = parse_dataset_id(dataset_id)
+    if plan is None:
+        return None
+    return PLAN_RETENTION_PREFIX.get(plan)
+
+
+def load_child_orders_filtered(dataset_id: str = DEFAULT_DATASET) -> pd.DataFrame:
     items = load_item_master()
-    one_year_items: list[str] = []
-    if "商品コード" in items.columns and "継続率抽出用" in items.columns:
-        one_year_items = (
+    target_items: list[str] = []
+    prefix = _retention_prefix_for(dataset_id)
+    if prefix and "商品コード" in items.columns and "継続率抽出用" in items.columns:
+        target_items = (
             items.loc[
-                items["継続率抽出用"].astype(str).str.startswith("1年"),
+                items["継続率抽出用"].astype(str).str.startswith(prefix),
                 "商品コード",
             ]
             .dropna()
@@ -164,13 +240,13 @@ def load_child_orders_filtered() -> pd.DataFrame:
         )
 
     child = load_child_orders_raw()
-    if not one_year_items:
+    if not target_items:
         return child.iloc[0:0]
-    return child[child["商品コード"].astype(str).isin(set(one_year_items))].copy()
+    return child[child["商品コード"].astype(str).isin(set(target_items))].copy()
 
 
-def load_monthly_subscriptions() -> pd.DataFrame:
-    m = load_subscription_master().copy()
+def load_monthly_subscriptions(dataset_id: str = DEFAULT_DATASET) -> pd.DataFrame:
+    m = load_subscription_master(dataset_id).copy()
     m["成約日"] = pd.to_datetime(m["成約日"])
     m = m.dropna(subset=["成約日"])
     m["month"] = m["成約日"].dt.to_period("M").dt.to_timestamp()
@@ -179,8 +255,8 @@ def load_monthly_subscriptions() -> pd.DataFrame:
     )
 
 
-def load_monthly_shipments() -> pd.DataFrame:
-    c = load_child_orders_filtered().copy()
+def load_monthly_shipments(dataset_id: str = DEFAULT_DATASET) -> pd.DataFrame:
+    c = load_child_orders_filtered(dataset_id).copy()
     c = c[c["対応状況"] == 5]
     c["発送日"] = pd.to_datetime(c["発送日"])
     c = c.dropna(subset=["発送日"])
@@ -207,13 +283,13 @@ def _apply_coupon_filter(master: pd.DataFrame, coupon: str | None) -> pd.DataFra
     return master[master["クーポン"].map(classify_coupon) == coupon].copy()
 
 
-def _shipped_count_per_master() -> pd.DataFrame:
+def _shipped_count_per_master(dataset_id: str = DEFAULT_DATASET) -> pd.DataFrame:
     """マスタIDごとの「21日以上前・対応状況=5」発送件数 ＝ 受取済回数。"""
     today = pd.Timestamp.now(tz="Asia/Tokyo").normalize()
     threshold = today - pd.Timedelta(days=21)
     threshold_naive = threshold.tz_localize(None)
 
-    c = load_child_orders_filtered().copy()
+    c = load_child_orders_filtered(dataset_id).copy()
     c["発送日"] = pd.to_datetime(c["発送日"])
     if c["発送日"].dt.tz is not None:
         c["発送日"] = c["発送日"].dt.tz_localize(None)
@@ -240,11 +316,11 @@ def recent_month_labels() -> dict:
     }
 
 
-def load_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
-    master = load_subscription_master().copy()
+def load_op_receive_rate(dataset_id: str = DEFAULT_DATASET, coupon: str | None = None) -> pd.DataFrame:
+    master = load_subscription_master(dataset_id).copy()
     master = _apply_coupon_filter(master, coupon)
     master["成約日"] = pd.to_datetime(master["成約日"])
-    ship = _shipped_count_per_master()
+    ship = _shipped_count_per_master(dataset_id)
     df = master.merge(ship, on="マスタID", how="left")
     df["shipped_count"] = df["shipped_count"].fillna(0).astype(int)
     df["has_received"] = (df["shipped_count"] >= 1).astype(int)
@@ -287,17 +363,17 @@ def load_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     return out[cols].sort_values("OP名").reset_index(drop=True)
 
 
-def load_daily_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
+def load_daily_op_receive_rate(dataset_id: str = DEFAULT_DATASET, coupon: str | None = None) -> pd.DataFrame:
     """成約日 × OP の 成約数 / 初回受取数 / 初回受取率。
 
     初回受取率 = 当該成約日の成約のうち、発送完了（対応状況=5）が
     21日以上前に1件以上記録された割合。21日未経過の日は0%付近に
     出やすいので注意。
     """
-    master = load_subscription_master().copy()
+    master = load_subscription_master(dataset_id).copy()
     master = _apply_coupon_filter(master, coupon)
     master["成約日"] = pd.to_datetime(master["成約日"])
-    ship = _shipped_count_per_master()
+    ship = _shipped_count_per_master(dataset_id)
     df = master.merge(ship, on="マスタID", how="left")
     df["shipped_count"] = df["shipped_count"].fillna(0).astype(int)
     df["has_received"] = (df["shipped_count"] >= 1).astype(int)
@@ -320,15 +396,15 @@ def load_daily_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     return agg.rename(columns={"担当者名": "OP名"})
 
 
-def load_monthly_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
+def load_monthly_op_receive_rate(dataset_id: str = DEFAULT_DATASET, coupon: str | None = None) -> pd.DataFrame:
     """月 × OP の 成約数 / 初回受取数 / 初回受取率。
 
     OP別デイリー受取率の月集計版。全期間の月別履歴を返す。
     """
-    master = load_subscription_master().copy()
+    master = load_subscription_master(dataset_id).copy()
     master = _apply_coupon_filter(master, coupon)
     master["成約日"] = pd.to_datetime(master["成約日"])
-    ship = _shipped_count_per_master()
+    ship = _shipped_count_per_master(dataset_id)
     df = master.merge(ship, on="マスタID", how="left")
     df["shipped_count"] = df["shipped_count"].fillna(0).astype(int)
     df["has_received"] = (df["shipped_count"] >= 1).astype(int)
@@ -352,10 +428,10 @@ def load_monthly_op_receive_rate(coupon: str | None = None) -> pd.DataFrame:
     return agg.rename(columns={"担当者名": "OP名"})
 
 
-def load_retention() -> pd.DataFrame:
-    master = load_subscription_master().copy()
+def load_retention(dataset_id: str = DEFAULT_DATASET) -> pd.DataFrame:
+    master = load_subscription_master(dataset_id).copy()
     master["成約日"] = pd.to_datetime(master["成約日"])
-    ship = _shipped_count_per_master()
+    ship = _shipped_count_per_master(dataset_id)
     df = master.merge(ship, on="マスタID", how="left")
     df["shipped_count"] = df["shipped_count"].fillna(0).astype(int)
     df["first_purchase_month"] = df["成約日"].dt.strftime("%Y-%m")

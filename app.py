@@ -10,6 +10,7 @@ from lib.bq import (
     load_op_receive_rate,
     recent_month_labels,
 )
+from lib.ui import coupon_radio, dataset_selector, show_dataset_header
 
 st.set_page_config(
     page_title="KB2 1年定期ダッシュボード",
@@ -30,22 +31,26 @@ with st.sidebar:
     st.write("- **詳細データ**")
     st.divider()
     st.header("フィルタ")
-    coupon_choice = st.radio("クーポン", ["両方", "有", "無"], horizontal=True, key="coupon_filter")
+dataset_id = dataset_selector(key="dataset_summary")
+coupon_arg = coupon_radio(key="coupon_summary")
+with st.sidebar:
     st.divider()
     if st.button("キャッシュをクリア", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-coupon_arg = coupon_choice if coupon_choice in ("有", "無") else None
+show_dataset_header(dataset_id, coupon_arg)
 
 labels = recent_month_labels()
 M_THIS = labels["this"]     # e.g. "5月"
 M_PREV = labels["prev"]     # e.g. "4月"
 M_PREV2 = labels["prev2"]   # e.g. "3月"
 
-op_df = load_op_receive_rate(coupon=coupon_arg)
-if coupon_arg:
-    st.info(f"🎫 クーポン **{coupon_arg}** のみで集計")
+try:
+    op_df = load_op_receive_rate(dataset_id, coupon=coupon_arg)
+except RuntimeError as e:
+    st.error(str(e))
+    st.stop()
 
 agg = {
     f"{M_THIS}_成約数": int(op_df[f"{M_THIS}_成約数"].fillna(0).sum()),
@@ -121,8 +126,8 @@ c4.metric(f"{M_PREV2} 初回受取数", f"{agg[f'{M_PREV2}_初回受取数']:,}"
 st.divider()
 
 st.subheader("月別 成約数 / 発送数")
-subs_df = load_monthly_subscriptions()
-ship_df = load_monthly_shipments()
+subs_df = load_monthly_subscriptions(dataset_id)
+ship_df = load_monthly_shipments(dataset_id)
 
 if not subs_df.empty or not ship_df.empty:
     merged = pd.merge(

@@ -9,6 +9,7 @@ import plotly.express as px
 import streamlit as st
 
 from lib.bq import load_daily_op_receive_rate
+from lib.ui import coupon_radio, dataset_selector, show_dataset_header
 
 
 _RATE_CMAP = cm.get_cmap("RdYlGn")
@@ -31,13 +32,16 @@ st.caption(
 
 with st.sidebar:
     st.header("フィルタ")
-    coupon_choice = st.radio("クーポン", ["両方", "有", "無"], horizontal=True, key="coupon_daily")
+dataset_id = dataset_selector(key="dataset_daily")
+coupon_arg = coupon_radio(key="coupon_daily")
 
-coupon_arg = coupon_choice if coupon_choice in ("有", "無") else None
-df = load_daily_op_receive_rate(coupon=coupon_arg)
+show_dataset_header(dataset_id, coupon_arg)
 
-if coupon_arg:
-    st.info(f"🎫 クーポン **{coupon_arg}** のみで集計")
+try:
+    df = load_daily_op_receive_rate(dataset_id, coupon=coupon_arg)
+except RuntimeError as e:
+    st.error(str(e))
+    st.stop()
 
 if df.empty:
     st.info("データがありません。")

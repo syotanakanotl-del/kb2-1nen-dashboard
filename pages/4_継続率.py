@@ -5,19 +5,29 @@ import plotly.express as px
 import streamlit as st
 
 from lib.bq import load_retention
+from lib.ui import dataset_selector, show_dataset_header
 
 st.set_page_config(page_title="継続率", page_icon="📈", layout="wide")
 st.title("継続率（コホート分析）")
 st.caption("成約月別のステップ間継続率と累積継続率")
 
-df = load_retention()
+with st.sidebar:
+    st.header("フィルタ")
+dataset_id = dataset_selector(key="dataset_retention")
+
+show_dataset_header(dataset_id)
+
+try:
+    df = load_retention(dataset_id)
+except RuntimeError as e:
+    st.error(str(e))
+    st.stop()
 
 if df.empty:
     st.info("データがありません。")
     st.stop()
 
 with st.sidebar:
-    st.header("フィルタ")
     months = df["first_purchase_month"].dropna().tolist()
     sel_months = st.multiselect("成約月", months, default=months)
 

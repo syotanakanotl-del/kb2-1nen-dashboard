@@ -5,6 +5,7 @@ import plotly.express as px
 import streamlit as st
 
 from lib.bq import load_op_receive_rate, recent_month_labels
+from lib.ui import coupon_radio, dataset_selector, show_dataset_header
 
 st.set_page_config(page_title="OP別パフォーマンス", page_icon="👥", layout="wide")
 st.title("OP別パフォーマンス")
@@ -23,13 +24,16 @@ st.caption(
 
 with st.sidebar:
     st.header("フィルタ")
-    coupon_choice = st.radio("クーポン", ["両方", "有", "無"], horizontal=True, key="coupon_perf")
+dataset_id = dataset_selector(key="dataset_perf")
+coupon_arg = coupon_radio(key="coupon_perf")
 
-coupon_arg = coupon_choice if coupon_choice in ("有", "無") else None
-df = load_op_receive_rate(coupon=coupon_arg)
+show_dataset_header(dataset_id, coupon_arg)
 
-if coupon_arg:
-    st.info(f"🎫 クーポン **{coupon_arg}** のみで集計")
+try:
+    df = load_op_receive_rate(dataset_id, coupon=coupon_arg)
+except RuntimeError as e:
+    st.error(str(e))
+    st.stop()
 
 if df.empty:
     st.info("データがありません。")
