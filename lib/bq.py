@@ -428,7 +428,6 @@ def load_monthly_op_receive_rate(dataset_id: str = DEFAULT_DATASET, coupon: str 
     return agg.rename(columns={"担当者名": "OP名"})
 
 
-@st.cache_data(ttl=60 * 30, show_spinner="商品×プラン全データセットを集計中…")
 def load_cross_product_summary(coupon: str | None = None) -> pd.DataFrame:
     """全データセットを商品×プラン×月で集計した生データを返す。
 
