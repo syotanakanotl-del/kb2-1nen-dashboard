@@ -20,7 +20,8 @@
       "WebFetch(domain:streamlit.io)",
       "WebFetch(domain:www.google.com)",
       "WebFetch(domain:www.streamlitstatus.com)",
-      "WebFetch(domain:status.streamlit.io)"
+      "WebFetch(domain:status.streamlit.io)",
+      "Bash(curl -s \"http://localhost:8501/_stcore/health\")"
     ]
   }
 }

@@ -428,6 +428,50 @@ def load_monthly_op_receive_rate(dataset_id: str = DEFAULT_DATASET, coupon: str 
     return agg.rename(columns={"担当者名": "OP名"})
 
 
+@st.cache_data(ttl=60 * 30, show_spinner="商品×プラン全データセットを集計中…")
+def load_cross_product_summary(coupon: str | None = None) -> pd.DataFrame:
+    """全データセットを商品×プラン×月で集計した生データを返す。
+
+    Columns: 商品, プラン, 月, 成約数, 初回受取数, 初回受取率
+    """
+    from lib.datasets import list_analyzable_datasets, parse_dataset_id
+
+    all_rows: list[pd.DataFrame] = []
+    for dataset_id in list_analyzable_datasets():
+        prod, plan = parse_dataset_id(dataset_id)
+        if plan is None or prod is None:
+            continue
+        try:
+            master = load_subscription_master(dataset_id).copy()
+            master = _apply_coupon_filter(master, coupon)
+            master["成約日"] = pd.to_datetime(master["成約日"])
+            ship = _shipped_count_per_master(dataset_id)
+            df = master.merge(ship, on="マスタID", how="left")
+            df["shipped_count"] = df["shipped_count"].fillna(0).astype(int)
+            df["has_received"] = (df["shipped_count"] >= 1).astype(int)
+            df["商品"] = prod
+            df["プラン"] = plan
+            df["月"] = df["成約日"].dt.to_period("M").dt.to_timestamp()
+            df = df.dropna(subset=["月"])
+            all_rows.append(df[["商品", "プラン", "月", "マスタID", "has_received"]])
+        except Exception:
+            # Sheet inaccessible / etc → skip this dataset
+            continue
+
+    if not all_rows:
+        return pd.DataFrame(columns=["商品", "プラン", "月", "成約数", "初回受取数", "初回受取率"])
+
+    full = pd.concat(all_rows, ignore_index=True)
+    agg = (
+        full.groupby(["商品", "プラン", "月"], as_index=False)
+        .agg(成約数=("マスタID", "nunique"), 初回受取数=("has_received", "sum"))
+    )
+    agg["初回受取率"] = agg.apply(
+        lambda r: (r["初回受取数"] / r["成約数"]) if r["成約数"] else None, axis=1
+    )
+    return agg
+
+
 def load_retention(dataset_id: str = DEFAULT_DATASET) -> pd.DataFrame:
     master = load_subscription_master(dataset_id).copy()
     master["成約日"] = pd.to_datetime(master["成約日"])

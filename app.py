@@ -24,6 +24,7 @@ st.caption("trustline-project.KB2_1nen / 業務レポート")
 with st.sidebar:
     st.header("メニュー")
     st.write("- **サマリー** (このページ)")
+    st.write("- **プラン別横断サマリー** (全商品集約)")
     st.write("- **OP別パフォーマンス**")
     st.write("- **OP別月間受取率**")
     st.write("- **OP別デイリー受取率**")
