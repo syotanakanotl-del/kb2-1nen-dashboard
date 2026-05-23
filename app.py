@@ -13,12 +13,12 @@ from lib.bq import (
 from lib.ui import coupon_radio, dataset_selector, show_dataset_header
 
 st.set_page_config(
-    page_title="KB2 1年定期ダッシュボード",
+    page_title="コース変更系初回受取率ダッシュボード",
     page_icon="📊",
     layout="wide",
 )
 
-st.title("KB2 1年定期ダッシュボード")
+st.title("コース変更系初回受取率ダッシュボード")
 st.caption("trustline-project.KB2_1nen / 業務レポート")
 
 with st.sidebar:

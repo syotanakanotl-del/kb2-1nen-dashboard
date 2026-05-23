@@ -1,4 +1,4 @@
-# KB2 1年定期ダッシュボード
+# コース変更系初回受取率ダッシュボード
 
 `trustline-project.KB2_1nen` のビューを使ったStreamlitダッシュボード。
 
