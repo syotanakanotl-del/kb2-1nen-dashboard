@@ -4,7 +4,6 @@ from __future__ import annotations
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from lib.bq import load_cross_product_summary, recent_month_labels
@@ -114,44 +113,11 @@ st.caption("行=商品、列=月別の成約数 / 初回受取数 / 初回受取
 prod_summary = aggregate_by("商品")
 render_table(prod_summary, "商品")
 
-# ─── 月別推移 ─────────────────────────────────────────
-st.divider()
-st.subheader("プラン別 月別推移")
-trend = raw.copy()
-trend["プラン表示"] = trend["プラン"].map(lambda v: PLAN_NAMES.get(v, v))
-trend["月_str"] = pd.to_datetime(trend["月"]).dt.strftime("%Y-%m")
-
-monthly = (
-    trend.groupby(["プラン表示", "月_str"], as_index=False)
-    .agg(成約数=("成約数", "sum"), 初回受取数=("初回受取数", "sum"))
-)
-monthly["初回受取率"] = monthly.apply(
-    lambda r: (r["初回受取数"] / r["成約数"]) if r["成約数"] else None, axis=1
-)
-monthly = monthly.sort_values("月_str")
-
-col_a, col_b = st.columns(2)
-with col_a:
-    fig = px.line(
-        monthly, x="月_str", y="初回受取率", color="プラン表示", markers=True,
-        title="プラン別 初回受取率の月別推移",
-    )
-    fig.update_layout(yaxis_tickformat=".0%", yaxis_range=[0, 1.05], xaxis_title=None)
-    st.plotly_chart(fig, use_container_width=True)
-with col_b:
-    fig = px.line(
-        monthly, x="月_str", y="成約数", color="プラン表示", markers=True,
-        title="プラン別 成約数の月別推移",
-    )
-    fig.update_layout(xaxis_title=None)
-    st.plotly_chart(fig, use_container_width=True)
-
 # ─── 商品×プラン クロス集計 ───────────────────────────
 st.divider()
 st.subheader(f"商品×プラン クロス集計 ({labels['prev']}_初回受取率)")
 st.caption(f"行=商品、列=プラン、値={labels['prev']}の初回受取率（評価可能な前月で比較）")
 
-prev_label = labels["prev"]
 crosstab_window = window[window["月"] == prev_m].copy()
 crosstab_window["商品表示"] = crosstab_window["商品"].map(lambda v: PRODUCT_NAMES.get(v, v))
 crosstab_window["プラン表示"] = crosstab_window["プラン"].map(lambda v: PLAN_NAMES.get(v, v))

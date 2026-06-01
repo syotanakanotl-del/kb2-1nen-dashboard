@@ -7,3 +7,12 @@ secrets/
 scripts/_*.json
 secrets_for_streamlit_cloud.toml
 
+# 別セッション/手動エクスポート由来のファイル
+daily_export.py
+daily_export.log
+export_csv.py
+run_daily.bat
+run_query.py
+tmp_count.sql
+*.csv
+
