@@ -429,46 +429,57 @@ def load_monthly_op_receive_rate(dataset_id: str = DEFAULT_DATASET, coupon: str 
 
 
 def load_cross_product_summary(coupon: str | None = None) -> pd.DataFrame:
-    """全データセットを商品×プラン×月で集計した生データを返す。
+    """全データセットを商品×プラン×月で集計した結果を返す。
+
+    各データセットを個別に集計してから連結することで、
+    Streamlit Cloud のメモリ上限（~1GB）内に収める。
 
     Columns: 商品, プラン, 月, 成約数, 初回受取数, 初回受取率
     """
+    import gc
+
     from lib.datasets import list_analyzable_datasets, parse_dataset_id
 
-    all_rows: list[pd.DataFrame] = []
+    aggregated_parts: list[pd.DataFrame] = []
     for dataset_id in list_analyzable_datasets():
         prod, plan = parse_dataset_id(dataset_id)
         if plan is None or prod is None:
             continue
         try:
-            master = load_subscription_master(dataset_id).copy()
+            master = load_subscription_master(dataset_id)
+            if master.empty:
+                continue
             master = _apply_coupon_filter(master, coupon)
-            master["成約日"] = pd.to_datetime(master["成約日"])
             ship = _shipped_count_per_master(dataset_id)
             df = master.merge(ship, on="マスタID", how="left")
             df["shipped_count"] = df["shipped_count"].fillna(0).astype(int)
             df["has_received"] = (df["shipped_count"] >= 1).astype(int)
-            df["商品"] = prod
-            df["プラン"] = plan
-            df["月"] = df["成約日"].dt.to_period("M").dt.to_timestamp()
+            df["月"] = pd.to_datetime(df["成約日"]).dt.to_period("M").dt.to_timestamp()
             df = df.dropna(subset=["月"])
-            all_rows.append(df[["商品", "プラン", "月", "マスタID", "has_received"]])
+
+            # データセット単位で集約（大きな intermediate を持たない）
+            ds_agg = (
+                df.groupby("月", as_index=False)
+                .agg(成約数=("マスタID", "nunique"), 初回受取数=("has_received", "sum"))
+            )
+            ds_agg["商品"] = prod
+            ds_agg["プラン"] = plan
+            aggregated_parts.append(
+                ds_agg[["商品", "プラン", "月", "成約数", "初回受取数"]]
+            )
+            del df, master, ship, ds_agg
+            gc.collect()
         except Exception:
-            # Sheet inaccessible / etc → skip this dataset
             continue
 
-    if not all_rows:
+    if not aggregated_parts:
         return pd.DataFrame(columns=["商品", "プラン", "月", "成約数", "初回受取数", "初回受取率"])
 
-    full = pd.concat(all_rows, ignore_index=True)
-    agg = (
-        full.groupby(["商品", "プラン", "月"], as_index=False)
-        .agg(成約数=("マスタID", "nunique"), 初回受取数=("has_received", "sum"))
-    )
-    agg["初回受取率"] = agg.apply(
+    out = pd.concat(aggregated_parts, ignore_index=True)
+    out["初回受取率"] = out.apply(
         lambda r: (r["初回受取数"] / r["成約数"]) if r["成約数"] else None, axis=1
     )
-    return agg
+    return out
 
 
 def load_retention(dataset_id: str = DEFAULT_DATASET) -> pd.DataFrame:
