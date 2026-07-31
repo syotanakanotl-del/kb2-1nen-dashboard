@@ -14,9 +14,10 @@ $OmniTableRegistry = @(
     @{ key = "prepla";   host = "trustingline"; tmpl = "架電検証全商材プレプラ【BQ取り込み用】"; prefix = "prepla";  table = ""; load = "load_prepla_to_bq.py" },
     @{ key = "dormant";  host = "trustingline"; tmpl = "架電検証全商材休眠";                 prefix = "dormant";    table = ""; load = "load_dormant_to_bq.py" },
     @{ key = "kagoochi"; host = "trustingline"; tmpl = "かご落ちOB全商材";                   prefix = "kagoochi";   table = ""; load = "load_kagoochi_to_bq.py" },
-    @{ key = "denwacv";  host = "trustingline"; tmpl = "電話重複CV集計";                     prefix = "denwacv";    table = ""; load = "load_denwacv_to_bq.py" },
+    # 電話重複CVは日付条件を「コール日」に固定(cond)。テンプレが最終コール日時に戻っても影響を受けない防御。
+    @{ key = "denwacv";  host = "trustingline"; tmpl = "電話重複CV集計";                     prefix = "denwacv";    table = ""; load = "load_denwacv_to_bq.py"; cond = "Wt02CallHistory.created" },
     # 電話重複CVはwellmediaテナントにも同名テンプレがある。両テナントを同一テーブルへ集約(テナント列で分離)。
-    @{ key = "denwacv_wm"; host = "wellmedia"; tmpl = "電話重複CV集計";                        prefix = "denwacvwm";  table = ""; load = "load_denwacv_to_bq.py" }
+    @{ key = "denwacv_wm"; host = "wellmedia"; tmpl = "電話重複CV集計";                        prefix = "denwacvwm";  table = ""; load = "load_denwacv_to_bq.py"; cond = "Wt02CallHistory.created" }
 )
 $OmniTableKeys = $OmniTableRegistry | ForEach-Object { $_.key }
 
@@ -42,6 +43,7 @@ function Invoke-OmniDayData {
         # extract用env(テーブル毎に完全設定→finallyで必ず戻す。順序非依存)
         if ($t.host) { $env:OMNI_HOST = $t.host } else { Remove-Item Env:OMNI_HOST -ErrorAction SilentlyContinue }
         if ($t.tmpl) { $env:OMNI_TEMPLATE = $t.tmpl } else { Remove-Item Env:OMNI_TEMPLATE -ErrorAction SilentlyContinue }
+        if ($t.cond) { $env:OMNI_CONDITION_TYPE = $t.cond } else { Remove-Item Env:OMNI_CONDITION_TYPE -ErrorAction SilentlyContinue }
         $env:OMNI_OUT_PREFIX = $t.prefix
         $ok = $false
         try {
@@ -61,7 +63,7 @@ function Invoke-OmniDayData {
             }
         }
         finally {
-            Remove-Item Env:OMNI_HOST, Env:OMNI_TEMPLATE, Env:OMNI_OUT_PREFIX -ErrorAction SilentlyContinue
+            Remove-Item Env:OMNI_HOST, Env:OMNI_TEMPLATE, Env:OMNI_OUT_PREFIX, Env:OMNI_CONDITION_TYPE -ErrorAction SilentlyContinue
         }
         $results[$t.key] = $ok
     }

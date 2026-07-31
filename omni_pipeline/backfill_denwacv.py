@@ -1,23 +1,22 @@
 # -*- coding: utf-8 -*-
-"""電話重複CV(wellmediaテナント)架電履歴を過去に遡ってDL+取込(初回投入)。
-   backfill_denwacv.py の wellmedia版。extract_omni の期間DL(2日付=最新コール日時での絞込)を
-   月チャンクで回し、load_denwacv_to_bq(テナント=wellmedia)で取込。
-   取込は テナント×DATE(コール日時) 単位で冪等(trustinglineの同日行は消さない)。
-   使い方: python backfill_denwacv_wm.py 2025-10-01 2026-07-30
+"""電話重複CV架電履歴を過去に遡ってDL+取込(初回投入)。
+   extract_omni の期間DL(2日付引数)を月チャンクで回し、load_denwacv_to_bq で取込。
+   取込は DATE(コール日時) 単位で冪等。落ちた月は日次リトライにフォールバック。
+   使い方: python backfill_denwacv.py 2026-01-01 2026-07-13
 """
 import sys, os, subprocess, calendar, datetime as dt
 sys.stdout.reconfigure(encoding="utf-8")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = r"C:\Users\syota\OneDrive\dashboard\.venv\Scripts\python.exe"
-ENV = dict(os.environ, PYTHONUTF8="1", OMNI_HOST="wellmedia",
-           OMNI_TENANT="wellmedia", OMNI_TEMPLATE="電話重複CV集計", OMNI_OUT_PREFIX="denwacvwm",
+ENV = dict(os.environ, PYTHONUTF8="1", OMNI_HOST="trustingline",
+           OMNI_TEMPLATE="電話重複CV集計", OMNI_OUT_PREFIX="denwacv",
            OMNI_CONDITION_TYPE="Wt02CallHistory.created",  # コール日で絞る(最終コール日時ではない)
            OMNI_HEADLESS="1", OMNI_DL_TIMEOUT_MS="300000")
 
 def extract(a, b):
     r = subprocess.run([PY, "-u", os.path.join(HERE, "extract_omni.py"),
                         a.strftime("%Y%m%d"), b.strftime("%Y%m%d")], env=ENV)
-    csv = os.path.join(HERE, "data", f"denwacvwm_{a:%Y%m%d}_{b:%Y%m%d}.csv")
+    csv = os.path.join(HERE, "data", f"denwacv_{a:%Y%m%d}_{b:%Y%m%d}.csv")
     return csv if (r.returncode == 0 and os.path.exists(csv)) else None
 
 def load(csv):
@@ -53,7 +52,7 @@ def main():
         do_month(y, m, start, end)
         m += 1
         if m > 12: y += 1; m = 1
-    print("=== backfill(wellmedia) 完了 ===")
+    print("=== backfill 完了 ===")
 
 if __name__ == "__main__":
     main()
